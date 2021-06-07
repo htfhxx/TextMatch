@@ -9,16 +9,18 @@ import gensim
 import numpy as np
 import pandas as pd
 import torch
-from hanziconv import HanziConv
+# from hanziconv import HanziConv
 from torch.utils.data import Dataset
 
 class LCQMC_Dataset(Dataset):
     def __init__(self, LCQMC_file, vocab_file, max_char_len):
         p, h, self.label = load_sentences(LCQMC_file)
-        word2idx, _, _ = load_vocab(vocab_file)
+        word2idx, idx2word, vocab_list = load_vocab(vocab_file)
         self.p_list, self.p_lengths, self.h_list, self.h_lengths = word_index(p, h, word2idx, max_char_len)
+
         self.p_list = torch.from_numpy(self.p_list).type(torch.long)
         self.h_list = torch.from_numpy(self.h_list).type(torch.long)
+        # self.label = torch.from_numpy(np.array(self.label)).type(torch.int16)
         self.max_length = max_char_len
         
     def __len__(self):
@@ -29,12 +31,29 @@ class LCQMC_Dataset(Dataset):
     
 # 加载word_index训练数据
 def load_sentences(file, data_size=None):
-    df = pd.read_csv(file)
-    p = map(get_word_list, df['sentence1'].values[0:data_size])
-    h = map(get_word_list, df['sentence2'].values[0:data_size])
-    label = df['label'].values[0:data_size]
+    # df = pd.read_csv(file)
+    sentence1 = []
+    sentence2 = []
+    labels = []
+    max_len = 0
+    with open(file, 'r', encoding='utf-8') as f:
+        for line in f:
+            lines = line.strip().split('\t')
+            sentence1.append(lines[0])
+            sentence2.append(lines[1])
+            labels.append(int(lines[2]))
+            # max_len = max(len(lines[1]), max(len(lines[0]), max_len))
+    # print('the max_len of the dataset: {}'.format(max_len))
+
+
+
+    assert len(sentence1) == len(sentence2) == len(labels)
+    # p = map(get_word_list, df['sentence1'].values[0:data_size])
+    # h = map(get_word_list, df['sentence2'].values[0:data_size])
+    # label = df['label'].values[0:data_size]
     #p_c_index, h_c_index = word_index(p, h)
-    return p, h, label
+    # return p, h, label
+    return sentence1, sentence2, labels
 
 # word->index
 def word_index(p_sentences, h_sentences, word2idx, max_char_len):
@@ -59,7 +78,7 @@ def load_vocab(vocab_file):
 
 ''' 把句子按字分开，中文按字分，英文数字按空格, 大写转小写，繁体转简体'''
 def get_word_list(query):
-    query = HanziConv.toSimplified(query.strip())
+    # query = HanziConv.toSimplified(query.strip())
     regEx = re.compile('[\\W]+')#我们可以使用正则表达式来切分句子，切分的规则是除单词，数字外的任意字符串
     res = re.compile(r'([\u4e00-\u9fa5])')#[\u4e00-\u9fa5]中文范围
     sentences = regEx.split(query.lower())
@@ -74,9 +93,9 @@ def get_word_list(query):
 
 def load_embeddings(embdding_path):
     model = gensim.models.KeyedVectors.load_word2vec_format(embdding_path, binary=False)
-    embedding_matrix = np.zeros((len(model.index2word) + 1, model.vector_size))
+    embedding_matrix = np.zeros((len(model.index_to_key) + 1, model.vector_size))
     #填充向量矩阵
-    for idx, word in enumerate(model.index2word):
+    for idx, word in enumerate(model.index_to_key):
         embedding_matrix[idx + 1] = model[word]#词向量矩阵
     return embedding_matrix
 

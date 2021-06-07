@@ -8,19 +8,12 @@ import os
 import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
-from data import LCQMC_Dataset, load_embeddings
-from utils import train, validate
-from model import ABCNN
+from projects.ABCNN_demo.util.data import LCQMC_Dataset, load_embeddings
+from projects.ABCNN_demo.util.utils import train, validate
+from projects.ABCNN_demo.util.model import ABCNN
+import argparse
 
-def main(train_file, dev_file, embeddings_file, vocab_file, target_dir, 
-         max_length=50,
-         epochs=50,
-         batch_size=256,
-         lr=0.0005,
-         patience=5,
-         max_grad_norm=10.0,
-         gpu_index=0,
-         checkpoint=None):
+def train_model(train_file, dev_file, embeddings_file, vocab_file, target_dir, max_length, epochs, batch_size, lr, patience, max_grad_norm, gpu_index, checkpoint):
     device = torch.device("cuda:{}".format(gpu_index) if torch.cuda.is_available() else "cpu")
     print(20 * "=", " Preparing for training ", 20 * "=")
     # 保存模型的路径
@@ -36,7 +29,7 @@ def main(train_file, dev_file, embeddings_file, vocab_file, target_dir,
     # -------------------- Model definition ------------------- #
     print("\t* Building model...")
     embeddings = load_embeddings(embeddings_file)
-    model = ABCNN(embeddings, device=device).to(device)
+    model = ABCNN(embeddings, num_layer=1, linear_size=300, max_length=max_length, device=device).to(device)
     # -------------------- Preparation for training  ------------------- #
     criterion = nn.CrossEntropyLoss()
     # 过滤出需要梯度更新的参数
@@ -96,13 +89,48 @@ def main(train_file, dev_file, embeddings_file, vocab_file, target_dir,
                         "epochs_count": epochs_count,
                         "train_losses": train_losses,
                         "valid_losses": valid_losses},
-                        os.path.join(target_dir, "best.pth.tar"))
+                        os.path.join(target_dir, "epoch_"+str(epoch)+".tar"))
+            torch.save({"epoch": epoch,
+                        "model": model.state_dict(),
+                        "best_score": best_score,
+                        "epochs_count": epochs_count,
+                        "train_losses": train_losses,
+                        "valid_losses": valid_losses},
+                        os.path.join(target_dir, "epoch_best.tar"))
         if patience_counter >= patience:
             print("-> Early stopping: patience limit reached, stopping...")
             break
-    
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train_dir", default="data/BQ/train.tsv")
+    parser.add_argument("--dev_dir", default="data/BQ/dev.tsv")
+    parser.add_argument("--embedding_dir", default="util/token_vec_300.bin")
+    parser.add_argument("--vocab_dir", default="util/vocab.txt")
+    parser.add_argument("--checkpoints_dir", default="checkpoints")
+    parser.add_argument("--max_len", type=int, default=50)
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--learning_rate", type=float, default=0.0005)
+    parser.add_argument("--patience", type=int, default=10)
+    parser.add_argument("--max_grad_norm", type=float, default=10.0)
+    parser.add_argument("--gpu_index", type=int, default=0)
+    parser.add_argument("--checkpoint", default=None)
+    args = parser.parse_args()
+
+
+
+    train_model(args.train_dir, args.dev_dir, args.embedding_dir, args.vocab_dir, args.checkpoints_dir,
+          max_length = args.max_len,
+          epochs=args.epochs,
+          batch_size=args.batch_size,
+          lr=args.learning_rate,
+          patience=args.patience,
+          max_grad_norm=args.max_grad_norm,
+          gpu_index=args.gpu_index,
+          checkpoint=args.checkpoint)
+
+
+
 if __name__ == "__main__":
-    
-    main("../data/LCQMC_train.csv","../data/LCQMC_dev.csv",
-         "../data/token_vec_300.bin", "../data/vocab.txt", "models")
-    
+    main()
+
